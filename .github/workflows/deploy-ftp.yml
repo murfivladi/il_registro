@@ -123,7 +123,7 @@ jobs:
           set net:max-retries 3
           set ssl:verify-certificate $FTP_FRONTEND_VERIFY_CERT
           mkdir -p -f "$FTP_FRONTEND_DIR"
-          mirror -R --verbose --parallel=4 $delete_flag --exclude-glob index.html registro-frontend/dist/ "$FTP_FRONTEND_DIR"
+          mirror -R --no-perms --verbose --parallel=4 $delete_flag --exclude-glob index.html registro-frontend/dist/ "$FTP_FRONTEND_DIR"
           put -O "$FTP_FRONTEND_DIR" registro-frontend/dist/index.html
           bye
           EOF
@@ -144,9 +144,12 @@ jobs:
           bye
           EOF
           # Not every FTP server supports SITE CHMOD: warn instead of failing.
+          # The binary is a new file on every deploy, so without chmod it is
+          # not executable: run "chmod +x" on the server before starting it
+          # (e.g. ExecStartPre=/bin/chmod +x ... in the systemd unit).
           lftp -u "$FTP_BACKEND_USERNAME","$FTP_BACKEND_PASSWORD" -p "$FTP_BACKEND_PORT" "$FTP_BACKEND_HOST" \
             -e "set ssl:verify-certificate $FTP_BACKEND_VERIFY_CERT; chmod 755 \"$FTP_BACKEND_DIR/$BINARY_NAME\"; bye" \
-            || echo "::warning::Could not chmod the binary; set it executable on the server (chmod 755)"
+            || echo "::warning::This FTP server does not allow chmod: run 'chmod +x $FTP_BACKEND_DIR/$BINARY_NAME' on the server before starting the backend"
 
       - name: Summary
         run: |
