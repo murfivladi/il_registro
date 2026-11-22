@@ -14,7 +14,7 @@ name: Deploy via FTP (reusable)
 #   FTP_BACKEND_PASSWORD    FTP password for the backend binary
 #   VITE_API_URL            (optional) backend API URL baked into the frontend build
 #
-# Variables (Settings → Environments → Variables):
+# Settings (Settings → Environments → Variables, or as Secrets — both work):
 #   FTP_FRONTEND_DIR          remote dir for the frontend, e.g. /public_html
 #   FTP_BACKEND_DIR           remote dir for the backend binary, e.g. /backend
 #   FTP_FRONTEND_PORT         (optional) default 21
@@ -42,17 +42,17 @@ jobs:
       FTP_FRONTEND_HOST: ${{ secrets.FTP_FRONTEND_HOST }}
       FTP_FRONTEND_USERNAME: ${{ secrets.FTP_FRONTEND_USERNAME }}
       FTP_FRONTEND_PASSWORD: ${{ secrets.FTP_FRONTEND_PASSWORD }}
-      FTP_FRONTEND_PORT: ${{ vars.FTP_FRONTEND_PORT || '21' }}
-      FTP_FRONTEND_DIR: ${{ vars.FTP_FRONTEND_DIR }}
-      FTP_FRONTEND_VERIFY_CERT: ${{ vars.FTP_FRONTEND_VERIFY_CERT || 'true' }}
-      FTP_FRONTEND_DELETE: ${{ vars.FTP_FRONTEND_DELETE || 'false' }}
+      FTP_FRONTEND_PORT: ${{ vars.FTP_FRONTEND_PORT || secrets.FTP_FRONTEND_PORT || '21' }}
+      FTP_FRONTEND_DIR: ${{ vars.FTP_FRONTEND_DIR || secrets.FTP_FRONTEND_DIR }}
+      FTP_FRONTEND_VERIFY_CERT: ${{ vars.FTP_FRONTEND_VERIFY_CERT || secrets.FTP_FRONTEND_VERIFY_CERT || 'true' }}
+      FTP_FRONTEND_DELETE: ${{ vars.FTP_FRONTEND_DELETE || secrets.FTP_FRONTEND_DELETE || 'false' }}
       FTP_BACKEND_HOST: ${{ secrets.FTP_BACKEND_HOST }}
       FTP_BACKEND_USERNAME: ${{ secrets.FTP_BACKEND_USERNAME }}
       FTP_BACKEND_PASSWORD: ${{ secrets.FTP_BACKEND_PASSWORD }}
-      FTP_BACKEND_PORT: ${{ vars.FTP_BACKEND_PORT || '21' }}
-      FTP_BACKEND_DIR: ${{ vars.FTP_BACKEND_DIR }}
-      FTP_BACKEND_VERIFY_CERT: ${{ vars.FTP_BACKEND_VERIFY_CERT || 'true' }}
-      BINARY_NAME: ${{ vars.BACKEND_BINARY_NAME || 'api-server' }}
+      FTP_BACKEND_PORT: ${{ vars.FTP_BACKEND_PORT || secrets.FTP_BACKEND_PORT || '21' }}
+      FTP_BACKEND_DIR: ${{ vars.FTP_BACKEND_DIR || secrets.FTP_BACKEND_DIR }}
+      FTP_BACKEND_VERIFY_CERT: ${{ vars.FTP_BACKEND_VERIFY_CERT || secrets.FTP_BACKEND_VERIFY_CERT || 'true' }}
+      BINARY_NAME: ${{ vars.BACKEND_BINARY_NAME || secrets.BACKEND_BINARY_NAME || 'api-server' }}
     steps:
       - uses: actions/checkout@v7
 
@@ -62,7 +62,7 @@ jobs:
           for v in FTP_FRONTEND_HOST FTP_FRONTEND_USERNAME FTP_FRONTEND_PASSWORD FTP_FRONTEND_DIR \
                    FTP_BACKEND_HOST FTP_BACKEND_USERNAME FTP_BACKEND_PASSWORD FTP_BACKEND_DIR; do
             if [ -z "${!v}" ]; then
-              echo "::error::$v is not set for environment '${{ inputs.environment }}'"
+              echo "::error::$v is empty. Add it as a Variable or Secret of the '${{ inputs.environment }}' environment (or of the repository), with exactly this name."
               missing=1
             fi
           done
@@ -100,7 +100,7 @@ jobs:
         env:
           CGO_ENABLED: "0"
           GOOS: linux
-          GOARCH: ${{ vars.BACKEND_GOARCH || 'amd64' }}
+          GOARCH: ${{ vars.BACKEND_GOARCH || secrets.BACKEND_GOARCH || 'amd64' }}
         run: |
           mkdir -p ../deploy-backend
           go build -trimpath \
