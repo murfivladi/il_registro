@@ -5,21 +5,26 @@ name: Deploy via FTP (reusable)
 #
 # Configure these in the GitHub Environment (staging / production):
 #
-# Secrets:
-#   FTP_HOST          FTP server host name (e.g. ftp.example.com)
-#   FTP_USERNAME      FTP user
-#   FTP_PASSWORD      FTP password
-#   VITE_API_URL      (optional) backend API URL baked into the frontend build
+# Secrets (frontend and backend can live on different FTP servers/accounts):
+#   FTP_FRONTEND_HOST       FTP host for the frontend (e.g. ftp.example.com)
+#   FTP_FRONTEND_USERNAME   FTP user for the frontend
+#   FTP_FRONTEND_PASSWORD   FTP password for the frontend
+#   FTP_BACKEND_HOST        FTP host for the backend binary
+#   FTP_BACKEND_USERNAME    FTP user for the backend binary
+#   FTP_BACKEND_PASSWORD    FTP password for the backend binary
+#   VITE_API_URL            (optional) backend API URL baked into the frontend build
 #
 # Variables (Settings → Environments → Variables):
-#   FTP_PORT              (optional) default 21
-#   FTP_FRONTEND_DIR      remote dir for the frontend, e.g. /public_html
-#   FTP_BACKEND_DIR       remote dir for the backend binary, e.g. /backend
-#   BACKEND_BINARY_NAME   (optional) default api-server
-#   BACKEND_GOARCH        (optional) amd64 | arm64, default amd64
-#   FTP_FRONTEND_DELETE   (optional) "true" = delete remote files missing from the build
-#   FTP_VERIFY_CERT       (optional) "false" = do not verify the FTPS TLS certificate
-#   VITE_API_URL          (optional) used if the secret of the same name is empty
+#   FTP_FRONTEND_DIR          remote dir for the frontend, e.g. /public_html
+#   FTP_BACKEND_DIR           remote dir for the backend binary, e.g. /backend
+#   FTP_FRONTEND_PORT         (optional) default 21
+#   FTP_BACKEND_PORT          (optional) default 21
+#   FTP_FRONTEND_VERIFY_CERT  (optional) "false" = do not verify the FTPS TLS certificate
+#   FTP_BACKEND_VERIFY_CERT   (optional) "false" = do not verify the FTPS TLS certificate
+#   FTP_FRONTEND_DELETE       (optional) "true" = delete remote files missing from the build
+#   BACKEND_BINARY_NAME       (optional) default api-server
+#   BACKEND_GOARCH            (optional) amd64 | arm64, default amd64
+#   VITE_API_URL              (optional) used if the secret of the same name is empty
 
 on:
   workflow_call:
@@ -34,22 +39,28 @@ jobs:
     runs-on: ubuntu-latest
     environment: ${{ inputs.environment }}
     env:
-      FTP_HOST: ${{ secrets.FTP_HOST }}
-      FTP_USERNAME: ${{ secrets.FTP_USERNAME }}
-      FTP_PASSWORD: ${{ secrets.FTP_PASSWORD }}
-      FTP_PORT: ${{ vars.FTP_PORT || '21' }}
+      FTP_FRONTEND_HOST: ${{ secrets.FTP_FRONTEND_HOST }}
+      FTP_FRONTEND_USERNAME: ${{ secrets.FTP_FRONTEND_USERNAME }}
+      FTP_FRONTEND_PASSWORD: ${{ secrets.FTP_FRONTEND_PASSWORD }}
+      FTP_FRONTEND_PORT: ${{ vars.FTP_FRONTEND_PORT || '21' }}
       FTP_FRONTEND_DIR: ${{ vars.FTP_FRONTEND_DIR }}
-      FTP_BACKEND_DIR: ${{ vars.FTP_BACKEND_DIR }}
-      BINARY_NAME: ${{ vars.BACKEND_BINARY_NAME || 'api-server' }}
+      FTP_FRONTEND_VERIFY_CERT: ${{ vars.FTP_FRONTEND_VERIFY_CERT || 'true' }}
       FTP_FRONTEND_DELETE: ${{ vars.FTP_FRONTEND_DELETE || 'false' }}
-      FTP_VERIFY_CERT: ${{ vars.FTP_VERIFY_CERT || 'true' }}
+      FTP_BACKEND_HOST: ${{ secrets.FTP_BACKEND_HOST }}
+      FTP_BACKEND_USERNAME: ${{ secrets.FTP_BACKEND_USERNAME }}
+      FTP_BACKEND_PASSWORD: ${{ secrets.FTP_BACKEND_PASSWORD }}
+      FTP_BACKEND_PORT: ${{ vars.FTP_BACKEND_PORT || '21' }}
+      FTP_BACKEND_DIR: ${{ vars.FTP_BACKEND_DIR }}
+      FTP_BACKEND_VERIFY_CERT: ${{ vars.FTP_BACKEND_VERIFY_CERT || 'true' }}
+      BINARY_NAME: ${{ vars.BACKEND_BINARY_NAME || 'api-server' }}
     steps:
       - uses: actions/checkout@v7
 
       - name: Check FTP configuration
         run: |
           missing=0
-          for v in FTP_HOST FTP_USERNAME FTP_PASSWORD FTP_FRONTEND_DIR FTP_BACKEND_DIR; do
+          for v in FTP_FRONTEND_HOST FTP_FRONTEND_USERNAME FTP_FRONTEND_PASSWORD FTP_FRONTEND_DIR \
+                   FTP_BACKEND_HOST FTP_BACKEND_USERNAME FTP_BACKEND_PASSWORD FTP_BACKEND_DIR; do
             if [ -z "${!v}" ]; then
               echo "::error::$v is not set for environment '${{ inputs.environment }}'"
               missing=1
@@ -107,10 +118,10 @@ jobs:
           if [ "$FTP_FRONTEND_DELETE" = "true" ]; then delete_flag="--delete"; fi
           # Assets first, index.html last, so visitors never get an index.html
           # that points to files not uploaded yet.
-          lftp -u "$FTP_USERNAME","$FTP_PASSWORD" -p "$FTP_PORT" "$FTP_HOST" <<EOF
+          lftp -u "$FTP_FRONTEND_USERNAME","$FTP_FRONTEND_PASSWORD" -p "$FTP_FRONTEND_PORT" "$FTP_FRONTEND_HOST" <<EOF
           set cmd:fail-exit yes
           set net:max-retries 3
-          set ssl:verify-certificate $FTP_VERIFY_CERT
+          set ssl:verify-certificate $FTP_FRONTEND_VERIFY_CERT
           mkdir -p -f "$FTP_FRONTEND_DIR"
           mirror -R --verbose --parallel=4 $delete_flag --exclude-glob index.html registro-frontend/dist/ "$FTP_FRONTEND_DIR"
           put -O "$FTP_FRONTEND_DIR" registro-frontend/dist/index.html
@@ -121,10 +132,10 @@ jobs:
         run: |
           # Upload under a temporary name, then swap it in, so the running
           # process is not left with a half-written file.
-          lftp -u "$FTP_USERNAME","$FTP_PASSWORD" -p "$FTP_PORT" "$FTP_HOST" <<EOF
+          lftp -u "$FTP_BACKEND_USERNAME","$FTP_BACKEND_PASSWORD" -p "$FTP_BACKEND_PORT" "$FTP_BACKEND_HOST" <<EOF
           set cmd:fail-exit yes
           set net:max-retries 3
-          set ssl:verify-certificate $FTP_VERIFY_CERT
+          set ssl:verify-certificate $FTP_BACKEND_VERIFY_CERT
           mkdir -p -f "$FTP_BACKEND_DIR"
           cd "$FTP_BACKEND_DIR"
           put "deploy-backend/$BINARY_NAME" -o "$BINARY_NAME.new"
@@ -133,8 +144,8 @@ jobs:
           bye
           EOF
           # Not every FTP server supports SITE CHMOD: warn instead of failing.
-          lftp -u "$FTP_USERNAME","$FTP_PASSWORD" -p "$FTP_PORT" "$FTP_HOST" \
-            -e "set ssl:verify-certificate $FTP_VERIFY_CERT; chmod 755 \"$FTP_BACKEND_DIR/$BINARY_NAME\"; bye" \
+          lftp -u "$FTP_BACKEND_USERNAME","$FTP_BACKEND_PASSWORD" -p "$FTP_BACKEND_PORT" "$FTP_BACKEND_HOST" \
+            -e "set ssl:verify-certificate $FTP_BACKEND_VERIFY_CERT; chmod 755 \"$FTP_BACKEND_DIR/$BINARY_NAME\"; bye" \
             || echo "::warning::Could not chmod the binary; set it executable on the server (chmod 755)"
 
       - name: Summary
